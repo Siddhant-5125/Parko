@@ -36,3 +36,4 @@ class Booking(models.Model):
     status = models.CharField(choices=status_choices,max_length=50,default='booked')
     req_time_start = models.TimeField(null=True)
     req_time_end = models.TimeField(null=True)
+    phone_number = models.CharField(max_length=15, null=True)
