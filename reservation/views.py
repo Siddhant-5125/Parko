@@ -15,6 +15,8 @@ from rest_framework import viewsets,serializers
 from rest_framework.decorators import action
 from django.core.exceptions import ValidationError
 from datetime import time
+from sms import send_sms
+from datetime import date
 
 
 def haversine(ulat, ulong, slat, slong):
@@ -156,7 +158,14 @@ class BookingViewSet(viewsets.ModelViewSet):
     queryset = Booking.objects.all()
     serializer_class = BookingSerializer
 
-    def handle_parking_slot_reservation(self, parking_slot_id, req_time_start, req_time_end, current_user):
+    def send_sms_to_phone(self,message, phone_number):
+        send_sms(
+            message,
+            '+17162720474',
+            [phone_number]
+        )
+
+    def handle_parking_slot_reservation(self, parking_slot_id, req_time_start, req_time_end, current_user, phone_number):
         try:
             if req_time_start is None:
                 req_time_start = time(0, 0, 0)
@@ -167,14 +176,9 @@ class BookingViewSet(viewsets.ModelViewSet):
 
             parking_slot = ParkingSlots.objects.get(id=parking_slot_id)
 
-            if parking_slot.reserved:
-                if (
-                    (req_time_start <= parking_slot.reserved_for_start <= req_time_end) or
-                    (req_time_start <= parking_slot.reserved_for_end <= req_time_end)
-                ):
-                    raise ValidationError("Slot has been already booked for the requested time range.")
-                else:
-                    raise ValidationError("The slot is already reserved for a different time range.")
+            if parking_slot.reserved and ((req_time_start <= parking_slot.reserved_for_start <= req_time_end) or (req_time_start <= parking_slot.reserved_for_end <= req_time_end)):
+                raise ValidationError("Slot has been already booked for the requested time range.")
+                
             else:
                 parking_slot.reserved = True
                 parking_slot.reserved_for_start = req_time_start
@@ -186,9 +190,11 @@ class BookingViewSet(viewsets.ModelViewSet):
                     slot=parking_slot,
                     req_time_start=req_time_start,
                     req_time_end=req_time_end,
+                    phone_number=phone_number,
                     status='booked'  # Set initial status
                 )
-
+                
+                
                 # Generate QR code
                 qr = qrcode.QRCode(
                     version=1,
@@ -196,27 +202,26 @@ class BookingViewSet(viewsets.ModelViewSet):
                     box_size=10,
                     border=4,
                 )
-                qr_data = f"http://127.0.0.1:8000/reservation/scan/{booking.id}"
+                qr_data = f"http://real-pleasantly-grizzly.ngrok-free.app/reservation/scan/{booking.id}"
                 qr.add_data(qr_data)
                 qr.make(fit=True)
 
-                # Create QR code image
                 qr_image = qr.make_image(fill_color="black", back_color="white")
                 
-                # Create media directory if it doesn't exist
                 media_root = os.path.join(settings.MEDIA_ROOT, 'qrcodes')
                 os.makedirs(media_root, exist_ok=True)
                 
-                # Generate unique filename
                 filename = f"booking_qr_{booking.id}_{uuid.uuid4().hex[:6]}.png"
                 file_path = os.path.join(media_root, filename)
                 
-                # Save QR code image
                 qr_image.save(file_path)
                 
-                # Update booking with QR code path
                 booking.qr_code = f"qrcodes/{filename}"
                 booking.save()
+
+                today = date.today()
+                self.send_sms_to_phone(f'Dear {current_user.name}, your booking has been successfully confirmed for {today} at {req_time_start}. Thank you for choosing us! We look forward to serving you. You can access your booking details and QR code here: http://real-pleasantly-grizzly.ngrok-free.app/media/qrcodes/{filename}', phone_number)
+
 
                 return booking.id                
             
@@ -228,31 +233,27 @@ class BookingViewSet(viewsets.ModelViewSet):
         parking_slot_id = request.data.get('slot')
         req_time_start = request.data.get('req_time_start')
         req_time_end = request.data.get('req_time_end')
-        # qr_code = request.data.get('qr_code')
-        # status = request.data.get('status')
+        phone_number = request.data.get('phone_number')
 
         if not parking_slot_id or not req_time_start or not req_time_end:
             return Response({"error": "Missing required fields."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # print(request.data)
         try:
             result = self.handle_parking_slot_reservation(
                 parking_slot_id=int(parking_slot_id),
                 req_time_start=req_time_start,
                 req_time_end=req_time_end,
                 current_user=request.user,
-                # qr_code = qr_code,
-                # status = status
+                phone_number=phone_number
             )
-            return Response({"message": result}, status=status.HTTP_201_CREATED)
+            return Response({"booking_id": result}, status=status.HTTP_201_CREATED)
         except ValidationError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['POST'])
+@api_view(['POST','GET'])
 @permission_classes([AllowAny])
 def scan_booking(request, booking_id):
-    # booking_id = request.data.get('booking_id')
     
     if not booking_id:
         return Response({'error': 'Booking ID is required'}, status=status.HTTP_400_BAD_REQUEST)
