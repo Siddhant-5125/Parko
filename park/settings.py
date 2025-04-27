@@ -45,6 +45,8 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'qr_code',
+    'sms',
+    'django_twilio',
 ]
 
 MIDDLEWARE = [
@@ -150,3 +152,9 @@ CORS_ALLOW_HEADERS = ['*']
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+
+SMS_BACKEND = 'sms.backends.twilio.SmsBackend'
+TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
+TWILIO_FROM_NUMBER = os.getenv('TWILIO_FROM_NUMBER')
