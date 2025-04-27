@@ -41,7 +41,7 @@ class BookingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Booking
-        fields = ['id', 'slot', 'req_time_start', 'req_time_end', 'user', 'qr_code', 'status']
+        fields = ['id', 'slot', 'req_time_start', 'req_time_end', 'user', 'qr_code', 'status','phone_number']
     def get_qr_code(self, obj):
         if obj.qr_code:
             request = self.context.get('request')
